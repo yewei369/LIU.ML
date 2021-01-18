@@ -1,1 +1,1 @@
-# LIU.ML is a collection of course assignments for Machine Learning
+LIU.ML is a collection of course assignments for Machine Learning
