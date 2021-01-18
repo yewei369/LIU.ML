@@ -1,0 +1,183 @@
+---
+title: "Lab3_Block1_JunLi"
+subtitle: "Machine Learning -- 732A99"
+author: "Jun Li"
+date: '2019-12-14'
+output: pdf_document
+---
+
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE,message=FALSE}
+RNGversion('3.5.1')
+```
+
+## Assignment 1: KERNEL METHODS
+   
+The kernels' width are selected as reciprocal of variance of the training data in central-distance, numeric transformation of date and time, and Gaussian is adopted as kernel function, therefore when the observation is closer the kernel value becomes larger, and vice versa (as shown in the graph below). Further, a cycle based distance is calculated for date and time, respectively with cycle of 365 days and  24 hours, in order to represent practise better.
+
+The two kernel methods have different constructures, first one has sum of kernels while the other has a product as input. Theoretically, the former should present better estimates because the latter would bury contribution of all kernels if there is at least one kernel approaching zero. However, in this prediction, it seems there is not such problem any way.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 1: KERNEL METHODS
+set.seed(1234567890)
+library(geosphere)
+library(kernlab)
+library(lubridate)
+stations <- read.csv("stations.csv")
+temps <- read.csv("temps50k.csv")
+st <- merge(stations,temps,by="station_number")
+
+## preparing test data
+a <- 58.4274 # The point to predict (up to the students)
+b <- 14.826
+date <- "2013-11-04" # The date to predict (up to the students)
+times <- seq(4,24,2);len<-length(times)
+for(i in 1:len) times[i]<-paste(times[i],":00:00",sep="")
+timesh<-times
+times<-as.numeric(hms(times))
+
+## prapare train data
+da<-cbind(latitude=st$latitude,longitude=st$longitude,
+          date=as.numeric(as.Date(st$date,origin="1900-01-01")),
+          time=as.numeric(hms(st$time)),air_temperature=st$air_temperature)
+train<-da[which(da[,3]<as.numeric(as.Date(date,origin="1900-01-01"))),];num<-nrow(train)
+cen<-c(mean(train[,2]),mean(train[,1]))  ## mean point of coordinates
+
+## Get widths
+train_distance<-vector(length=num) 
+for(i in 1:num) 
+  train_distance[i]<-distHaversine(c(train[i,2],train[i,1]),cen)
+
+h_distance<-var(train_distance)
+h_date<-var(train[,3])
+h_time<-var(train[,4])
+
+## Get kernels
+u_distance<-vector(length=num)  # distance in geography
+for(i in 1:num) u_distance[i]<-distHaversine(c(b,a),c(train[i,2],train[i,1]))
+u_date<-vector(length=num)  # distance in date
+for(i in 1:num) u_date[i]<-(as.numeric(as.Date(date,origin="1900-01-01"))-train[i,3])%%365
+u_time<-matrix(nrow=len,ncol=num)  # distance in time
+for(i in 1:len) for(j in 1:num) u_time[i,j]<-(times[i]-train[j,4])%%as.numeric(hms("24:00:00"))
+  
+k_distance<-exp(-u_distance^2/(2*h_distance))
+k_date<-exp(-u_date^2/(2*h_date))
+k_time<-exp(-u_time^2/(2*h_time))
+
+###### width proof: kernel decreasing as further
+plot(u_distance,k_distance,xlab="u_dis",ylab="k_dis")
+plot(u_date,k_date,xlab="u_date",ylab="k_date")
+plot(u_time[1,],k_time[1,],xlab="u_time_1",ylab="k_time_1")# pick 1st test time for example
+
+## method 1
+m1<-vector(length=len)
+for(i in 1:len)
+ {k<-k_distance+k_date+k_time[i,]
+  m1[i]<-t(k)%*%train[,5]/sum(k)}
+
+## method 2
+m2<-vector(length=len)
+for(i in 1:len)
+ {k<-k_distance*k_date*k_time[i,]
+  m2[i]<-t(k)%*%train[,5]/sum(k)}
+
+plot(m1, type="o",main="Kernel Predictions(Kasta,20131104)",col="blue",ylim=c(4,8.5))
+axis(1,at=1:len,labels=timesh)
+lines(m2, type="o",col="red")
+legend('topright',legend=c("Meth.1","Meth.2"),fill=c("blue","red"))
+```
+
+
+
+# Assignment 2: SUPPORT VECTOR MACHINES
+The original data is devided into training, validation and test data with respectively 70%, 15% and 15% of the dataset. The plot below shows that trainning error get lower while test error gets lowest at second model, which means the second model has better viability, thus model with C=1 is selected and gives test error rate of 0.0651 after training on both training and validation set. And the delivered model with parameters trained from the whole data is presented as below. 
+
+Parameter C is a penalty factor to missclassification error (restrict condition), or reciprocal of regularization parameter. The larger C is, the lower bias and larger variance, just opposite to regularization parameter. 
+
+
+```{r,eval=TRUE,results=TRUE,echo=FALSE,warning=FALSE,message=FALSE}
+## Assignment 2: SUPPORT VECTOR MACHINES
+## part 1
+library(kernlab)  ## ksvm
+data(spam)
+n<-nrow(spam);p<-ncol(spam)
+set.seed(12345)
+id1<-sample(n,floor(n*0.7))             ## id for training data
+id2<-sample(c(1:n)[-id1],floor(n*0.15)) ## id for valid data
+id3<-c(1:n)[-c(id1,id2)]                ## id for test data
+train<-spam[id1,];valid<-spam[id2,];test<-spam[id3,]
+validx<-valid[,-p];validy<-valid[,p]
+testx<-test[,-p];testy<-test[,p]   ## no need convert to 0/1
+
+
+fit1<-ksvm(x=type~.,data=train,kernel=rbfdot(sigma=0.05),C=0.5)
+fit2<-ksvm(x=type~.,data=train,kernel=rbfdot(sigma=0.05),C=1)
+fit3<-ksvm(x=type~.,data=train,kernel=rbfdot(sigma=0.05),C=5)
+pre1<-predict(fit1,validx,type="response")
+pre2<-predict(fit2,validx,type="response")
+pre3<-predict(fit3,validx,type="response")
+preta1<-table(pre1,validy);err1<-(preta1[1,2]+preta1[2,1])/length(validy)
+preta2<-table(pre2,validy);err2<-(preta2[1,2]+preta2[2,1])/length(validy)
+preta3<-table(pre3,validy);err3<-(preta3[1,2]+preta3[2,1])/length(validy)
+
+train_err<-c(error(fit1),error(fit2),error(fit3))
+test_err<-c(err1,err2,err3)
+
+plot(train_err, type="o",main="train/test error",xlab="index",
+     ylab="error rate",col="blue",ylim=c(0,0.1))
+lines(test_err, type="o",col="red")
+legend('topright',legend=c("train","test"),fill=c("blue","red"))
+
+## part 2
+fit2<-ksvm(x=type~.,data=rbind(train,valid),kernel=rbfdot(sigma=0.05),C=1)
+pre2<-predict(fit2,testx,type="response")
+preta2<-table(pre2,testy);err2<-(preta2[1,2]+preta2[2,1])/length(testy)
+print(paste("The generalized error rate of model is ",err2,sep=""))
+ 
+## part 3
+fit<-ksvm(x=type~.,data=spam,kernel=rbfdot(sigma=0.05),C=1)
+print("Here comes the fit result of model 2 for client:")
+fit
+```
+
+
+# Assignment 3: NEURAL NETWORKS
+The train/valid plot on error rate shows that the trainning error gets lower when threshold gets lower, while valid error reaches the lowest point at i=4 (threshold=0.004). Thus model with 0.004 as threshold is selected.
+
+
+```{r,eval=TRUE,results=FALSE,echo=FALSE,warning=FALSE,message=FALSE}
+## Assignment 3: NEURAL NETWORKS
+library(neuralnet)
+set.seed(1234567890)
+Var <- runif(50, 0, 10)
+trva <- data.frame(Var, Sin=sin(Var))
+tr <- trva[1:25,] # Training
+va <- trva[26:50,] # Validation
+
+# Random initialization of the weights in the interval [-1, 1]
+winit <- runif(31,-1,1)# Your code here
+
+trerr<-vector(length=10)
+teerr<-vector(length=10)
+for(i in 1:10) {
+nn <- neuralnet(Sin~Var,data=tr,hidden=c(10),threshold=i/1000,startweights=winit)
+trerr[i]<-nn$result.matrix[1]
+tem<-sum((predict(nn,va)-va[,2])^2)/nrow(va)
+teerr[i]<-tem
+}
+
+plot(trerr, type="o",main="train/valid error",xlab="index",
+     ylab="error",col="blue",ylim=c(0,0.01))
+lines(teerr, type="o",col="red")
+legend('topright',legend=c("train","test"),fill=c("blue","red"))
+
+plot(neuralnet(Sin~Var,data=tr,hidden=c(10),threshold=0.004,startweights=winit),rep= "best")
+```
+
+
+
+
+# Code Appendix
+
+```{r code = readLines(knitr::purl("C:/Users/A550240/Desktop/LIU/1.2_MachineLearning/Lab3_block1_5/Lab3_Block1_JunLi_corrected.Rmd", documentation = 1)), echo = T, eval = F}
+```

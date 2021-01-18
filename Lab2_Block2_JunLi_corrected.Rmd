@@ -1,0 +1,207 @@
+---
+title: "Lab2_Block2_JunLi"
+subtitle: "Machine Learning -- 732A99"
+author: "Jun Li"
+date: '2019-12-11'
+output: pdf_document
+---
+
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE,message=FALSE}
+RNGversion('3.5.1')
+library(xlsx)
+library(ggplot2)
+library(mgcv)
+library(pamr)
+library(glmnet)
+library(kernlab)  ## ksvm
+
+da1<-read.xlsx("influenza.xlsx",1,header=TRUE)
+da2<-read.csv2("data.csv",header=TRUE)
+```
+
+## Assignment 1: Using GAM and GLM to examine the mortality rates
+## Part 1   
+Both mortality and influenza have seasonal behaviour and they seem to share the period.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 1: Using GAM and GLM to examine the mortality rates
+## part 1
+time<-1:nrow(da1)
+g<-ggplot(da1,aes(x=time))+
+   geom_line(aes(y=Mortality,colour="Mortality"))+
+   geom_line(aes(y=Influenza+1800,colour="Influenza"))+
+   scale_y_continuous(sec.axis = sec_axis(~.-1800, name = "Influenza"))+
+   scale_colour_manual(values = c("blue", "red"))+
+   labs(y = "Mortality",x = "Time",colour = "Variables")
+g
+```
+
+
+## Part 2
+The probabilistic model of Mortality should be $N(w_0+w_1*Year+s(Week),\sigma^2)$, alternatively without *Year* term since it is unsignificant.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 1: Using GAM and GLM to examine the mortality rates
+## part 2
+fit=gam(Mortality~Year+s(Week,k=length(unique(da1$Week))),family=gaussian(link="identity"),data=da1,method="GCV.Cp") ## why k?
+summary(fit)
+```
+
+
+## Part 3
+The model shows a good fitting to the observed data. According to the fitting result, intercept and coefficient of Year seem not be significant. The trend of Mortality does not seem to change through years. The spline component behaves in the same seasonal pattern as original data and fitted values since there is a obvious high Mortality in the beginning and end of the year.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 1: Using GAM and GLM to examine the mortality rates
+## part 3
+pre<-fit$fitted.values
+spline<-pre-cbind(rep(1,nrow(da1)),da1$Year)%*%fit$coefficients[1:2]
+plot(da1$Mortality,type="l",main="observed vs. fitted",xlab="time",ylab="mortality")
+lines(pre,col="blue")
+legend('topright',legend=c("observed","fitted"),fill=c("black","blue"))
+
+plot(fit)
+```
+
+
+## Part 4
+The larger penalty factor is, the larger estimated deviance and the less degree of fredom become, which is demonstrated by the plots below.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 1: Using GAM and GLM to examine the mortality rates
+## part 4
+fit1=gam(Mortality~Year+s(Week,sp=1),family=gaussian(link="identity"),data=da1,method="GCV.Cp")
+fit2=gam(Mortality~Year+s(Week,sp=100),family=gaussian(link="identity"),data=da1,method="GCV.Cp")
+pre1<-fit1$fitted.values
+pre2<-fit2$fitted.values
+plot(da1$Mortality,type="l",main="high/low penalty",xlab="time",ylab="mortality")
+lines(pre1,col="blue")
+lines(pre2,col="red")
+legend('topright',legend=c("observed","low sp","high sp"),fill=c("black","blue","red"))
+```
+
+## Part 5
+5 of the relative residuals peaks synchronize with influenza's, thus the residuals are correlated with outbreaks of influenza.  
+
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 1: Using GAM and GLM to examine the mortality rates
+## part 5
+plot(da1$Mortality,type="l",main="observed vs. residuals",xlab="time",ylab="mortality",ylim=c(-100,2500))
+lines(fit$residuals,col="blue")
+legend('topright',legend=c("observed","residuals"),fill=c("black","blue"))
+```
+
+
+## Part 6
+The new model has deviance of 2917179, lower than 3949040 from the first model, thus it is better. From the plot, a conclusion has been reached that the mortality is influenced by outbreaks of influenza.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 1: Using GAM and GLM to examine the mortality rates
+## part 6
+fit3=gam(Mortality~s(Year,k=length(unique(da1$Year)))+s(Week)+s(Influenza),
+         family=gaussian(link="identity"),data=da1,method="GCV.Cp")
+pre<-fit3$fitted.values
+plot(da1$Mortality,type="l",main="observed vs. fitted",xlab="time",ylab="mortality")
+lines(pre,col="blue")
+legend('topright',legend=c("observed","fitted"),fill=c("black","blue"))
+
+```
+
+
+
+
+# Assignment 2: High-dimensional methods
+## Part 1
+The threshold of 1.4 is selected where 170 genes kept (group report was generated without setting up sampling version which caused strange CV plot and unconsistent results in other parts); the top features in centroid plot contribute the most to prediction, and the features on the right side of line have positive relation with response; the 10 most contributing features are shown as below, except "position" and "candidates" the other features are all highly positively related with conference. The misclassification error for test data is 2/20=0.1  
+
+```{r,eval=TRUE,results=FALSE,echo=FALSE,warning=FALSE,message=FALSE}
+## Assignment 2: High-dimensional methods
+## part 1
+n<-nrow(da2)
+set.seed(12345)
+trainid<-sample(n,floor(n*0.7))
+train<-da2[trainid,]
+test<-da2[-trainid,]
+
+rownames(train)=1:nrow(train);rownames(test)=1:nrow(test)
+x=t(train[,-4703]);x1=t(test[,-4703])
+y=train[[4703]];y1=test[[4703]]
+trainda=list(x=x,y=as.factor(y),geneid=as.character(1:nrow(x)), genenames=rownames(x))
+testda=list(x=x1,y=as.factor(y1),geneid=as.character(1:nrow(x1)), genenames=rownames(x1))
+
+fit=pamr.train(trainda,threshold=seq(0,4,0.1))
+cvfit=pamr.cv(fit,trainda)
+pamr.plotcv(cvfit)
+#cat("\n")
+pamr.plotcen(fit,trainda,threshold=1.4)
+
+print("Here comes the first 10 most significant features:")
+pamr.listgenes(fit,trainda,threshold=1.4,genenames=TRUE)
+
+print("Here comes confusion matrix with test data:")
+pre<-pamr.predict(fit,testda$x,threshold=1.4)
+table(pre,testda$y)
+```
+
+
+
+## Part 2
+It shows that SVM adopts the fewest features and lowest test error rate, and is preferred among these methods. (While in ElasticNet the lambda.min is selected to train the model and genereating the following results)
+
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE,message=FALSE}
+## Assignment 2: High-dimensional methods
+## part 2
+enfit<-cv.glmnet(t(trainda$x),trainda$y,family="binomial",alpha=0.5)
+nyenfit<-glmnet(t(trainda$x),trainda$y,family="binomial",alpha=0.5,lambda=enfit$lambda.min)
+print(paste("Elastic net has significant features of ",nyenfit$df,sep=""))
+enpre<-as.factor(predict(nyenfit,newx=t(testda$x),type="class"))
+enta<-table(enpre,testda$y)
+print(paste("Elastic net has test error rate of ",(enta[1,2]+enta[2,1])/sum(enta),sep=""))
+
+svmfit<-ksvm(t(trainda$x),trainda$y,kernel="vanilladot")
+print("SVM has significant features of 43")
+svmpre<-as.factor(predict(svmfit,t(testda$x),type="response"))
+svmta<-table(svmpre,testda$y)
+print(paste("SVM has test error rate of ",(svmta[1,2]+svmta[2,1])/sum(svmta),sep=""))
+```
+
+
+## Part 3
+The features corresponding to the rejected hypotheses are as follows, whose adjusted p-values are lower than 0.05 significance level. That means they have significant mean difference between classes, thus are influencing "conference" classifcication. (results got after code modification)
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 2: High-dimensional methods
+## part 3
+genes<-colnames(da2)
+m<-length(genes)
+pv<-vector(length=m-1)
+for(i in 1:(m-1)) {
+   f<-as.formula(paste(genes[i],"~",genes[m],sep=""))
+   pv[i]<-t.test(f,data=da2,alternative="two.sided")$p.value}
+
+rej2<-NULL
+nypv<-sort(pv);nyor<-order(pv)
+for(i in 1:(m-1)) if(nypv[i]<0.05*i/(m-1))  rej2<-c(rej2,i)
+cat(genes[nyor[rej2]])
+#length(rej2)
+
+#Using p.adjust
+#rej1<-NULL
+#adpv<-p.adjust(pv,"BH");rej1<-which(adpv<0.05) #length(rej1)
+#cat(genes[rej1])
+
+```
+
+
+
+
+
+
+
+# Code Appendix
+
+```{r code = readLines(knitr::purl("C:/Users/A550240/Desktop/LIU/1.2_MachineLearning/Lab2_block2_4/Lab2_Block2_JunLi_corrected.Rmd", documentation = 1)), echo = T, eval = F}
+```

@@ -1,0 +1,363 @@
+---
+title: "Lab1_Block1_JunLi_1"
+subtitle: "Machine Learning -- 732A99"
+author: "Ahmet Akdeve, Zhixuan Duan, Jun Li"
+date: '2019-11-22'
+output: pdf_document
+---
+
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+RNGversion('3.5.1')
+library(xlsx)
+library(kknn)
+library(readxl)
+da1<-read.xlsx("spambase.xlsx",1,header=TRUE)
+da2<-read.xlsx("machines.xlsx",1,header=TRUE)
+da3<-read.csv("swiss.csv",header=TRUE)
+da4<-read.xlsx("tecator.xlsx",1,header=TRUE)
+```
+
+## Assignment 1: Spam classification with nearest neighbors (This part is re-writen completely)
+### Generalized Linear Model
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+n<-nrow(da1)
+set.seed(12345)
+id<-sample(1:n,n%/%2)
+train<-da1[id,]
+test<-da1[-id,]
+
+fo<-"Spam~Word1"
+for(i in 2:(ncol(train)-1)) fo<-paste(fo,"+Word",i,sep="")
+
+Xtrain<-cbind(rep(1,nrow(train)),train)
+dimnames(Xtrain)[[2]][1]="Word0"
+Xtest<-cbind(rep(1,nrow(test)),test)
+dimnames(Xtest)[[2]][1]="Word0"
+fit<-glm(as.formula(fo),data=Xtrain)
+
+## First rule
+print("Here come the confusion matrices for training set under first rule:")
+Actual<-train$Spam
+Estimate<-ifelse(predict(fit,Xtrain)>0.5,1,0)
+re<-table(Actual,Estimate)
+re
+print("Here come the misclassification rate for taining set under first rule:")
+(re[1,2]+re[2,1])/nrow(train)
+print("Here come the confusion matrices for test set under first rule:")
+Actual<-test$Spam
+Estimate<-ifelse(predict(fit,Xtest)>0.5,1,0)
+re<-table(Actual,Estimate)
+re
+print("Here come the misclassification rate for test set under first rule:")
+(re[1,2]+re[2,1])/nrow(test)
+
+## Second rule
+print("Here come the confusion matrices for training set under second rule:")
+Estimate<-ifelse(fit$fitted.values>0.8,1,0)
+re<-table(Actual,Estimate)
+re
+print("Here come the misclassification rate for taining set under second rule:")
+(re[1,2]+re[2,1])/nrow(train)
+print("Here come the confusion matrices for test set under second rule:")
+Actual<-test$Spam
+Estimate<-ifelse(predict(fit,Xtest)>0.8,1,0)
+re<-table(Actual,Estimate)
+re
+print("Here comes the misclassification rate for test set under second rule:")
+(re[1,2]+re[2,1])/nrow(test)
+```
+Both rules present a higher misclassification rate for test set, since the parameters/estimators are trained on training set. On the other hand, the second rule with a higher threshold of 0.8 gives a higher misclassification rate.
+
+### K-nearest Neighbor 
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## k=30
+fit<-train.kknn(as.formula(fo),data=Xtrain,ks=30)
+print("Here come the misclassification rate for taining set when k=30:")
+Actual<-train$Spam
+Estimate<-ifelse(predict(fit,Xtrain)>0.5,1,0)
+re<-table(Actual,Estimate)
+(re[1,2]+re[2,1])/nrow(train)
+print("Here come the misclassification rate for test set when k=30:")
+Actual<-test$Spam
+Estimate<-ifelse(predict(fit,Xtest)>0.5,1,0)
+re<-table(Actual,Estimate)
+(re[1,2]+re[2,1])/nrow(test)
+
+## k=1
+fit<-train.kknn(as.formula(fo),data=Xtrain,ks=1)
+print("Here come the misclassification rate for taining set when k=1:")
+Actual<-train$Spam
+Estimate<-ifelse(predict(fit,Xtrain)>0.5,1,0)
+re<-table(Actual,Estimate)
+(re[1,2]+re[2,1])/nrow(train)
+print("Here come the misclassification rate for test set when k=1:")
+Actual<-test$Spam
+Estimate<-ifelse(predict(fit,Xtest)>0.5,1,0)
+re<-table(Actual,Estimate)
+(re[1,2]+re[2,1])/nrow(test)
+
+```
+When k=30, the KNN modle gives a higher misclassification rate than GLM. While when k=1, the KNN model gives a worse result for test set comparing with k=30 but 100% accuracy for training set, since it chooses only the nearest training observation as voting source and therefore perfectly matched to the training set but with much higher bias and higher error rate for test set. 
+
+
+## Assignment 2: Inference about lifetime of machines
+The distribution type of x(*Length*) is exponential distribution with mean of $1/\theta$. The function of log-likelihood is plotted as below. The log-likelihood reaches its maximum value -42.29453 when $\theta=1.126233$. However, if only the first 6 observations used, the graph shows a different optimal theta value, but the graph is quite plat, which is not much of significance. That is resulted from the limitation of ML which needs large sample to give a fruitable estimation. Therefore, ML is suitable for the first scenario but not for the second.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## part 2,3
+y<-function(x){  ## function for part b
+   logpro<-1;n<-nrow(da2)
+   for(i in 1:n) logpro<-logpro*(x*exp(-1*x*da2[i,]))
+   logpro<-log(logpro)
+   return(logpro)}
+y1<-function(x){ ## function for part c
+   logpro<-1;n<-nrow(da2)
+   for(i in 1:6) logpro<-logpro*(x*exp(-1*x*da2[i,]))
+   logpro<-log(logpro)
+   return(logpro)}
+
+curve(y,0,5,xlab="theta",ylab="Log-likelihood",col="black",ylim=range(c(-150,0)))
+curve(y1,add=TRUE,col="red")
+abline(v=1.126233,col="black")
+abline(v=1.785666,col="red")
+legend('topright',legend=c("All","First 6"),fill=c("black","red"))
+print("Here come the results when all observations considered:")
+optimize(y,lower=0,upper=5,maximum=TRUE)
+print("Here come the results when first 6 observations considered:")
+optimize(y1,lower=0,upper=5,maximum=TRUE)
+```
+ 
+
+Conditional probability and Bayesian Theorem are used for this function to compute the log-likelihood. To maximize the likelihood, the value of theta is 0.9121931, little lower than ML method from part 2. (Curve of Bayesian method is reploted as below)
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## part 4
+y<-function(x){  ## function for part b
+   logpro<-1;n<-nrow(da2)
+   for(i in 1:n) logpro<-logpro*(x*exp(-1*x*da2[i,]))
+   logpro<-log(logpro)
+   return(logpro)}
+y1<-function(x){ ## function for part d
+   logpro<-10*exp(-10*x);n<-nrow(da2)
+   for(i in 1:n) logpro<-logpro*(x*exp(-1*x*da2[i,]))
+   logpro<-log(logpro)
+   return(logpro)}
+
+curve(y,0,5,xlab="theta",ylab="Log-likelihood",col="black",ylim=range(c(-150,0)))
+curve(y1,0,5,add=TRUE,col="red")
+abline(v=1.126233,col="black")
+abline(v=0.9121931,col="red")
+legend('topright',legend=c("ML","Bayes"),fill=c("black","red"))
+print("Here come the results when using Bayesian Theorem:")
+optimize(y1,lower=0,upper=1,maximum=TRUE)
+```
+
+
+The following graph show approximately same frequency distribution, therefore the estimate theta parameter is good.
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+x<-as.numeric(da2[[1]])
+y<-rexp(50,1.126233) #Bayesian 0.09182959
+print("Here comes the hist graph of observed data:")
+hist(x,xlab="Length",ylab="Frequency",main="Real data")
+print("Here comes the hist graph of generated data:")
+hist(y,xlab="Length",ylab="Frequency",main="Generated data")
+```
+
+
+
+## Assignment 3: Feature selection by cross-validation in a linear model
+By choosing the optimal CV value, the model with all five variables are suggested; while considering the best AIC value which reduces overfitting, the model with variables of Catholic and Infant.Mortality are highly recommended. That explains the reality to some extent, since Catholic tends not to abort pregnancy. However, higher infant mortality should lead to lower fertility. 
+```{r,eval=TRUE,echo=FALSE,warning=FALSE,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+myfunc<-function(X,Y,Nfolds){
+  #X: matrix containing X measurements
+  #Y: vector containing Y measurements
+  #Nfolds: number of folds in the cross-validation
+  
+  nexa<-nrow(X) # number of examples
+  nvar<-ncol(X) # number of variables
+  CVset<-NULL   #* CVset, set of best CV values for every number of variable
+                #combinations, vector
+  varset<-NULL  #* varset, set of variable combinations, list
+  coefset=NULL  #* coefficient set for all variable combinations, list
+  aicset=NULL   #* AIC for all numbers of variable combinations
+   
+  
+  set.seed(12345)
+  ind<-sample(1:nexa)    # index for permuted examples
+  nsubexa<-nexa%/%Nfolds # ground number of examples per fold
+  nrestexa<-nexa%%Nfolds # remainer number of examples
+  
+  for(i in 1:nvar){ # loop for every number of variable combinations
+    combvar<-combn(nvar,i)    ## combinations of variables
+    ncombvar<-ncol(combvar)   ## number of combinations 
+    
+    min<-Inf   # min CV value for fixed number of variable combinations 
+    CVtem<-NULL;vartem<-NULL;coeftem<-NULL;aictem<-NULL
+    for(j in 1:ncombvar){  # loop for every variable combinations
+      
+             error<-0    
+             for(m in 1:Nfolds){  ## loop for N-fold CV
+              if(m<=nrestexa) validind<-((nsubexa+1)*(m-1)+1):((nsubexa+1)*m)  else
+                ## index for validation set
+                                 
+                validind<-((nexa-(Nfolds-m)*nsubexa-nsubexa)+1):(nexa-(Nfolds-m)*
+                                                                   nsubexa)
+                 
+                 
+                 x<-cbind(as.vector(rep(1,(nexa-length(validind)))),X[ind                                       [-validind],combvar[,j]]) # add bias column to X matrix 
+                 names(x)[1]<-"intercept"
+                 coef<-solve((t(as.matrix(x))%*%as.matrix(x)))%*%t(x)%*%Y[ind
+                                    [-validind],]  # coefficients for trained model
+                 error<-error+sum((as.matrix(cbind(as.vector(rep(1,length(validind
+                      ))),X[ind[validind],combvar[,j]]))%*%coef-Y[ind[validind],])
+                      ^2) ## validation error
+                 
+                 
+                                }
+                  
+                 error<-error/nexa
+                 aic<-log(error)+(nexa+2*(i+1)/nexa)
+                 if(error<min) {min<-error;CVtem<-error;coeftem<-coef
+                                vartem<-c("intercept",names(X)[combvar[,j]])
+                                aictem<-aic}
+                      
+                          }
+
+    CVset<-append(CVset,CVtem);coefset<-append(coefset,list(coeftem));
+    varset<-append(varset,list(vartem)); 
+    aicset<-append(aicset,aictem)
+                   }
+  
+  
+  
+  CVopt<-min(CVset)                          #*CVopt, best CV value
+  varopt<-varset[[which(CVset==CVopt)]]      #*varopt, optimal variable combinations
+  coefopt<-coefset[[which(CVset==CVopt)]]    #*coefopt, optimal estimates of coeff
+  
+  
+  plot(1:nvar,CVset,type="p",xlab="Number of variables",ylab="CV")
+  for(i in 1:nvar){segments(i,0,i,CVset[i])}
+  
+  print("By choosing the least CV value:")
+  cat(paste("The optimal CV is ",CVopt,sep=""));cat(";\n")
+  cat(paste("The optimal variable set is: "))
+  cat(varopt);cat(";\n")
+  cat(paste("The optimal coefficients are: ",sep=""))
+  cat(coefopt);cat(";\n")
+  
+  print("By choosing the least AIC value:")
+  cat(paste("The optimal AIC is ",min(aicset),sep=""));cat(";\n")
+  cat(paste("The optimal CV is ",CVset[which.min(aicset)],sep=""));cat(";\n")
+  cat(paste("The optimal variable set is: "))
+  cat(varset[[which.min(aicset)]]);cat(";\n")
+  cat(paste("The optimal coefficients are: ",sep=""))
+  cat(coefset[[which.min(aicset)]]);cat(";\n")
+  
+  
+  re<-list(CVopt=CVopt,CVset=CVset,varopt=varopt,varset=varset,coefopt=coefopt,
+           coefset=coefset,aicset=aicset)
+  
+}
+
+ha<-myfunc(da3[3:7],da3[2],5)
+
+
+```
+
+
+
+
+## Assignment 4:
+From the plot below, an approximate linearity detected between variables Protein and Moisture, but apparently a linear model could not fit well enough. 
+By reducing MSE, the general deviations between predicted values and real data get minimized, which is equivalent to maximum likelihood estimation. And expected moisture as function of protein is as follows:
+$M_i=\beta_0+\beta_1P+\beta_2P^2+...\beta_iP^i$, which follows a normal distribution $N(\overline{M},\sigma_M^2/n)$
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+# part 1
+plot(da4$Protein,da4$Moisture，xlab="Protein",ylab="Moisture",main="Part 1")
+```
+
+
+According to the plot, M3 is the best model since it has the lowest validation MSE. As the model gets more complex with more variables, the training MSE gets lower while validation MSE reaches the lowest point at M3 but starts to roar after that. The turning point suggests a overfitting/high-variance resulted from too many variables or too complex model. As model gets more complicated the model bias gets improved, but after M3 high-variance problem turns up as well (which means the same as the comments), which is the so-called "bias-variance trade-off". 
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+#part 3
+n<-nrow(da4)
+set.seed(12345)
+id<-sample(n,n%/%2)
+train<-da4[id,]
+valid<-da4[-id,]
+
+xtrain<-rep(1,length(id))
+xvalid<-rep(1,length(id))
+mse<-list(train=NULL,valid=NULL)
+for(i in 1:6){
+  xtrain<-cbind(xtrain,as.matrix(train["Protein"]^i))
+  xvalid<-cbind(xvalid,as.matrix(valid["Protein"]^i))
+  esti<-solve(t(xtrain)%*%xtrain,tol=1e-25) %*% t(xtrain) %*% as.matrix(train["Moisture"])
+  mse[["train"]]<-append(mse[["train"]],sum((xtrain%*%esti-train["Moisture"])^2)/
+                           nrow(xtrain))
+  mse[["valid"]]<-append(mse[["valid"]],sum((xvalid%*%esti-valid["Moisture"])^2)/
+                           nrow(xvalid))
+              }
+plot(1:6,mse$train,xlab="Model i",ylab="MSE",main="MSE for Mi", 
+     type="l",ylim=range(c(24,45)),col="black")
+lines(1:6,mse$valid,add=TRUE,type="l",col="red")
+legend('topright',legend=c("Train","Valid"),fill=c("black","red"))
+
+
+```
+
+
+Using StepAIC, there is a model generated with 63 variables left (not including intercept) and AIC of 95.54769.
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## part 4
+library(MASS)
+n<-nrow(da4)
+X<-cbind(rep(1,n),da4[2:101])
+Y<-da4$Fat
+fit<-lm(Y~.,data=X)
+step<-stepAIC(fit,direction="both",trace=0)
+summary(step)
+```
+
+
+The plot below shows that the coefficients converge or get surpressed to a constant value as *lambda* the penalty factor gets larger and overfitting effect gets reduced but at the same time bias problem becomes significant.
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## part 5
+library(glmnet)
+fit<-glmnet(as.matrix(X[-1]),Y,family="gaussian",alpha=0)
+plot(fit,xvar="lambda",label=TRUE)
+```
+
+
+The LASSO result shows a bumpy convergence and gives sparse solutions.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## part 6
+fit<-glmnet(as.matrix(X[-1]),Y,family="gaussian",alpha=1)
+plot(fit,xvar="lambda",label=TRUE)
+
+```
+
+
+ 
+The CV results give a best lambda of 0 and keep all variables in the model, which is actually the original linear regression model. The plot below shows that CV increases as lambda gets larger. Compared with stepAIC method in part 4, this CV with LASSO method gives a AIC of 208.09, which means the method in part 4 gives a better model.
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## part 7+8
+fit<-cv.glmnet(as.matrix(X[-1]),Y,family="gaussian",alpha=1,lambda=seq(0,7,0.01))
+print(paste("The best lambda is: ",fit$lambda.min,sep=""))
+print(paste("Here come the coefficients of correponding variables: ",sep=""))
+coef(fit,s="lambda.min")
+plot(fit)
+
+aic<-log(fit$cvm[1])+(length(n/10)+2*(100+1)/length(n/10))
+print(paste("AIC of this model is: ",aic,sep=""))
+```
+
+
+# Code Appendix
+
+```{r code = readLines(knitr::purl("C:/Users/A550240/Desktop/LIU/1.2_MachineLearning/Lab1_block1_1/Lab1_Block1_JunLi_1.Rmd", documentation = 1)), echo = T, eval = F}
+```

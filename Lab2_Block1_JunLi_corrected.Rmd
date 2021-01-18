@@ -1,0 +1,379 @@
+---
+title: "Lab2_Block1_JunLi"
+subtitle: "Machine Learning -- 732A99"
+author: "Jun Li"
+date: '2019-12-04'
+output: pdf_document
+---
+
+
+```{r,eval=TRUE,echo=TRUE,warning=FALSE,message=FALSE}
+RNGversion('3.5.1')
+library(xlsx)
+library(MASS)
+library(tree)
+library(e1071)
+library(boot)
+library(fastICA)
+da1<-read.csv("australian-crabs.csv",header=TRUE)
+da2<-read.xlsx("creditscoring.xls",1,header=TRUE)
+da3<-read.csv2("State.csv")
+da4<-read.csv2("NIRspectra.csv",header=TRUE)
+```
+
+## Assignment 1: LDA and logistic regression
+
+The data is quite easy to classify by sex using variables RW and CL, since the two catagories seem to be clearly separated by a line; The first LDA gives a quite good result with a misclassification rate of 0.035; The second LDA model gives a worse result than the first, and the misclassification rate is 0.075. The main reason is that the preset prior possibilities for categories misrepresented the truth, which changed the weight of categories when maximizing the distances and minimizing group variances; The logistic linear regression gives misclassfication rate of 0.035, the same as the first LDA. Equation of decision boundary is $Sex=-0.1418+0.3697RW-0.1267CL=0.5$, which is equivalent with $CL=2.917916RW-5.065509$.     
+
+```{r,eval=TRUE,echo=TRUE,warning=FALSE}
+## Assignment 1: LDA and logistic regression
+## part 1
+plot(da1$RW,da1$CL,col=da1$sex,xlab="RW",ylab="CL",main="Original data")
+## part 2
+profe<-sum(da1$sex=="Female")
+proma<-sum(da1$sex=="Male")
+n<-nrow(da1)
+fi<-lda(sex~RW+CL,data=da1,prior=c(profe,proma)/n)
+new<-cbind(da1$RW,da1$CL,predict(fi,da1)$class)
+print("Here come the results of first LDA:")
+plot(new[,1],new[,2],col=new[,3],xlab="RW",ylab="CL",main="First LDA")
+table(da1$sex,new[,3])
+## part 3
+fi<-lda(sex~RW+CL,data=da1,prior=c(0.9,0.1))
+new<-cbind(da1$RW,da1$CL,predict(fi,da1)$class)
+print("Here come the results of second LDA:")
+plot(new[,1],new[,2],col=new[,3],xlab="RW",ylab="CL",main="Second LDA")
+table(da1$sex,new[,3])
+## part 4
+nysex<-vector(length=n)
+nysex[which(da1$sex=="Female")]=1
+lmfi<-glm(nysex~da1$RW+da1$CL)
+lmpre<-vector(length=n)
+lmpre[which(lmfi$fitted.values>0.5)]="Female"
+lmpre[which(lmfi$fitted.values<=0.5)]="Male"
+new<-cbind(da1$RW,da1$CL,as.factor(lmpre))
+print("Here come the results of linear regression:")
+plot(new[,1],new[,2],col=new[,3],xlab="RW",ylab="CL",main="GLM")
+#db<-function(x) return(2.917916*x-5.065509)
+curve(2.917916*x-5.065509,add=TRUE,col="blue")
+table(da1$sex,new[,3])
+
+```
+
+
+
+## Assignment 2: Analysis of credit scoring
+
+The tree by deviance gives 106 misclassifications for training set and 71 for test set, while tree by Gini index gives 106 and 88 misclassifications for test set. The model by deviance is selected for following tasks.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 2: Analysis of credit scoring
+## part 1
+set.seed(12345)
+n<-nrow(da2)
+pop<-1:n
+idtrain<-sample(pop,0.5*n)
+idvalid<-sample(pop[-idtrain],0.25*n)
+idtest<-pop[-c(idvalid,idtrain)]
+train<-da2[idtrain,]
+valid<-da2[idvalid,]
+test<-da2[idtest,]
+## part 2
+treede<-tree(good_bad~.,data=train,split="deviance")
+treegi<-tree(good_bad~.,data=train,split="gini")
+print("Here comes the tree by deviance:")
+plot(treede)
+text(treede,pretty=0)
+print("Here comes the result by deviance for training set:")
+depre<-predict(treede,newdata=train,type="class")
+table(train$good_bad,depre)
+print("Here comes the result by deviance for test set:")
+depre<-predict(treede,newdata=test,type="class")
+table(test$good_bad,depre)
+print("Here comes the tree by Gini index:")
+plot(treegi)
+#text(treegi,pretty=0)
+print("Here comes the result by Gini index for training set:")
+gipre<-predict(treede,newdata=train,type="class")
+table(train$good_bad,gipre)
+print("Here comes the result by Gini index for test set:")
+gipre<-predict(treegi,newdata=test,type="class")
+table(test$good_bad,gipre)
+```
+
+The plot shows a flat on validation scores, but actually the tree with 4 leaves gives the least error of 65 misclassifications. The optimal tree is presented as below, with a depth of 3 nodes/variables: savings, durations and histories. The tree structure suggests to classify if the savings less than 2.5: if no then it's good, else then ask if duration less than 43.5: if no then it's bad, else ask if history less than 1.5: if no then it's good, else bad. the misclassification rate for the test data is 0.26
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 2: Analysis of credit scoring
+## part 3
+fit<-tree(good_bad~.,data=train,split="deviance")
+traindev<-rep(0,10)
+validdev<-rep(0,10)
+for(i in 2:10)
+  {prun<-prune.tree(fit,best=i)
+   prunpre<-predict(prun,newdata=valid,type="tree")
+   traindev[i]<-deviance(prun)
+   validdev[i]<-deviance(prunpre)}
+plot(2:10,traindev[2:10],type="b",col="blue",xlab="size",ylab="deviance",ylim=c(250,600))
+points(2:10,validdev[2:10],type="b",col="red")
+legend('topright',legend=c("train","valid"),fill=c("blue","red"))
+op<-prune.tree(fit,best=4)
+plot(op);text(op,pretty=0)
+print("Here comes the result of training set:")
+trainpre<-predict(op,newdata=train,type="class")
+table(train$good_bad,trainpre)
+print("Here comes the result of test set:")
+testpre<-predict(op,newdata=test,type="class")
+table(test$good_bad,testpre)
+```
+
+Naive Bayes gives a misclassification rate of 0.3 for training set and 0.32 for test set, which is worse than decision trees in part 3.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 2: Analysis of credit scoring
+## part 4
+fit<-naiveBayes(good_bad~.,data=train)
+print("Here comes the result of training set:")
+trainpre<-predict(fit,newdata=train)
+table(train$good_bad,trainpre)
+print("Here comes the result of test set:")
+testpre<-predict(fit,newdata=test)
+table(test$good_bad,testpre)
+```
+
+The larger area under ROC curve, the better model is. Approximately Bayes is slightly better than tree in this case.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 2: Analysis of credit scoring
+## part 5
+treepro<-predict(op,newdata=test)
+bayepro<-predict(fit,newdata=test,type="raw")
+treere<-vector(length=250);bayere<-vector(length=250)
+seq<-seq(0.05,0.95,0.05);n<-length(seq)
+testbi<-vector(length=250)
+testbi[which(test$good_bad=="good")]=1;testbi[-which(test$good_bad=="good")]=0
+treefpa<-vector(length=n);treetpa<-vector(length=n)
+bayefpa<-vector(length=n);bayetpa<-vector(length=n)
+
+for(i in 1:n){
+  treere[which(treepro[,2]>seq[i])]=1;treere[-which(treepro[,2]>seq[i])]=0
+  bayere[which(bayepro[,2]>seq[i])]=1;bayere[-which(bayepro[,2]>seq[i])]=0
+  
+  treeta<-table(testbi,treere);bayeta<-table(testbi,bayere)
+  
+  if(ncol(treeta)==1 & treere[1]==1) 
+    {treefpa[i]<-treeta[1,]/sum(treeta[1,])
+     treetpa[i]<-treeta[2,]/sum(treeta[2,])
+     } else if(ncol(treeta)==1 & treere[1]==0) 
+     {treefpa[i]<-0
+      treetpa[i]<-0
+      } else
+       {treefpa[i]<-treeta[1,2]/sum(treeta[1,])
+        treetpa[i]<-treeta[2,2]/sum(treeta[2,])}
+  
+   if(ncol(bayeta)==1 & bayere[1]==1) 
+    {bayefpa[i]<-bayeta[1,]/sum(bayeta[1,])
+     bayetpa[i]<-bayeta[2,]/sum(bayeta[2,])
+     } else if(ncol(bayeta)==1 & bayere[1]==0) 
+     {bayefpa[i]<-0
+      bayetpa[i]<-0
+      } else
+       {bayefpa[i]<-bayeta[1,2]/sum(bayeta[1,])
+        bayetpa[i]<-bayeta[2,2]/sum(bayeta[2,])}
+  }
+
+plot(treefpa,treetpa,col="black",type="b",main="ROC: Tree VS. Bayes",xlab="FPA",ylab="TPA")
+points(bayefpa,bayetpa,col="red",type="b")
+legend('topleft',legend=c("Tree","Bayes"),fill=c("black","red"))
+```
+
+
+
+With new loss matrix the result becomes much better, since a larger cost laid upon the misclassifications.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 2: Analysis of credit scoring
+## part 6
+trainpro<-predict(fit,newdata=train,type="raw")
+testpro<-predict(fit,newdata=test,type="raw")
+trainre<-vector(length=500);testre<-vector(length=250);
+trainre[which(trainpro[,2]/trainpro[,1]>10)]=1
+testre[which(testpro[,2]/testpro[,1]>10)]=1
+
+testbi<-vector(length=250)
+testbi[which(test$good_bad=="good")]=1;testbi[-which(test$good_bad=="good")]=0
+trainbi<-vector(length=250)
+trainbi[which(train$good_bad=="good")]=1;trainbi[-which(train$good_bad=="good")]=0
+
+print("Here comes the result for training set:")
+table(trainbi,trainre)
+print("Here comes the result for test set:")
+table(testbi,testre)
+
+```
+
+
+## Assignment 3: Uncertainty estimation
+
+The reaction between EX and MET in the plot seems to fit better in a multinomial model. The optimal tree regression does not give a good result, since the residual histogram shows a non-zero mean and skewed distribution. 
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 3: Uncertainty estimation
+## part 1+2
+or<-order(da3$MET)
+nyda<-da3[or,]
+plot(nyda$MET,nyda$EX,xlab="MET",ylab="EX")
+
+fit<-tree(EX~MET,data=nyda,control=tree.control(nobs=48,minsize=8)) 
+set.seed(12345)
+cvre<-cv.tree(fit)
+plot(cvre$size, cvre$dev, type="b",col="red")
+# plot(log(cv.res$k), cv.res$dev,type="b", col="red")  #?$k
+print("So leaf number of 3 is selected")
+
+op<-prune.tree(fit,best=3)
+plot(op);text(op) 
+
+pre<-predict(op,newdata=nyda,type="vector")
+plot(nyda$EX,col="black",type="b")
+points(pre,col="red",type="b")
+legend('topright',legend=c("original","fitted"),fill=c("black","red"))
+res<-pre-nyda$EX
+hist(res,main="Residuals",prob=TRUE)
+lines(density(res),col="red")
+
+```
+
+The confidence band seems very bumpy, potentially due to small data size and non-parametric method. Since the band has large width, the tree regression fitting is not good enough.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 3: Uncertainty estimation
+## part 3
+
+# computing bootstrap samples
+f=function(data, ind){
+  data1=data[ind,]# extract bootstrap sample
+  fit<-tree(EX~MET,data=data1,control=tree.control(nobs=48,minsize=8))
+  op<-prune.tree(fit,best=3)
+  #predict values for all Area values from the original data
+  pre<-predict(op,newdata=nyda,type="vector")
+  return(pre)}
+res=boot(nyda,f,R=1000) #make bootstrap
+
+## Confidence band
+e=envelope(res,level=0.95) #compute confidence bands
+fit<-tree(EX~MET,data=nyda,control=tree.control(nobs=48,minsize=8))
+op<-prune.tree(fit,best=3)
+pre<-predict(op,newdata=nyda,type="vector")
+
+plot(nyda$MET,nyda$EX, pch=21, bg="orange")
+points(nyda$MET,pre,type="l") #plot fitted line
+#plot cofidence bands
+points(nyda$MET,e$point[2,], type="l", col="blue")
+points(nyda$MET,e$point[1,], type="l", col="blue")
+
+```
+
+
+
+Since the band still has large width, the tree regression fitting is not considered good enough. There is 1 observations out of the prediction band, less than 5%, which however might be improved even better with right distribution adopted in function f2. A Beta distribution would be suggested here in Bootstrap and more consistent with residual histogram in part 2.
+
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 3: Uncertainty estimation
+## part 4
+
+### Confidence band
+# computing bootstrap samples
+fit<-tree(EX~MET,data=nyda,control=tree.control(nobs=48,minsize=8))
+op<-prune.tree(fit,best=3)
+pre<-predict(op,newdata=nyda,type="vector")
+
+rng=function(data, mle) {
+  data1=data.frame(EX=data$EX, MET=data$MET)
+  n=length(data$EX)
+  #generate new Price
+  pre<-predict(mle, newdata=data1,type="vector")
+  data1$EX=rnorm(n,pre,sd(pre-data1$EX))
+  return(data1)}
+
+f1=function(data1){
+  fit<-tree(EX~MET,data=data1,control=tree.control(nobs=48,minsize=8))#fit linear model
+  op<-prune.tree(fit,best=3) 
+  #predict values for all Area values from the original data
+  pre=predict(op,newdata=nyda,type="vector")
+  return(pre)}
+res=boot(nyda, statistic=f1, R=1000, mle=op,ran.gen=rng, sim="parametric") #make bootstrap
+e=envelope(res) #compute confidence bands
+
+
+## Prediction Band
+f2=function(data1){
+  fit<-tree(EX~MET,data=data1,control=tree.control(nobs=48,minsize=8))#fit linear model
+  op<-prune.tree(fit,best=3) 
+  #predict values for all Area values from the original data
+  pre=predict(op,newdata=nyda,type="vector")
+  n=length(nyda$EX)
+  preran=rnorm(n,pre,sd(pre-nyda$EX))
+  return(preran)}
+res2=boot(nyda,statistic=f2,R=10000,mle=op,ran.gen=rng,sim="parametric")
+e2=envelope(res2) #compute confidence bands
+
+## plot
+plot(nyda$MET,nyda$EX, pch=21, bg="orange",ylim=c(140,470))
+points(nyda$MET,pre,type="l") #plot fitted line
+points(nyda$MET,e$point[2,], type="l", col="blue")#plot confidence bands
+points(nyda$MET,e$point[1,], type="l", col="blue")
+points(nyda$MET,e2$point[2,], type="l", col="red")#plot prediction bands
+points(nyda$MET,e2$point[1,], type="l", col="red")
+```
+
+
+
+
+## Assignment 4: Principal components
+
+The plot below shows that the first two components explains the most variation, 99.6%. Therefore, the first two are suggested to select. And there are obviously two outliers with index of 224 and 372.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 4: Principal components
+## part 1
+re<-prcomp(da4[,1:126])
+screeplot(re)
+biplot(re) 
+eig<-re$sdev^2
+plot(re$x[,1],re$x[,2])  
+```
+
+
+It seems that the first component is mainly explained by the first few feature.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 4: Principal components
+## part 2
+U<-re$rotation
+plot(U[,1], main="Traceplot, PC1")
+plot(U[,2],main="Traceplot, PC2")
+
+```
+
+The traceplots show the same result that features contribute a mirrored magnitude to the principal components. W' is used to map original feature set to the new coordination system. The score plot shows a mirrored relation between first two components, because ICA finds the latent features which are independent and can seperate data in the best way.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## Assignment 4: Principal components
+## part 3
+
+set.seed(12345)  ## ?
+re<-fastICA(da4[,1:126],2)
+K<-re$K;W<-re$W
+W1<-K%*%W
+plot(W1[,1],main="Traceplot, 1st")
+plot(W1[,2],main="Traceplot, 2nd")
+plot(re$S[,1],re$S[,2])
+
+```
+
+# Code Appendix
+
+```{r code = readLines(knitr::purl("C:/Users/A550240/Desktop/LIU/1.2_MachineLearning/Lab2_block1_3/Lab2_Block1_JunLi_corrected.Rmd", documentation = 1)), echo = T, eval = F}
+```

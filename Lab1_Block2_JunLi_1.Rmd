@@ -1,0 +1,162 @@
+---
+title: "Lab1_Block2_JunLi"
+subtitle: "Machine Learning -- 732A99"
+author: "Jun Li"
+date: '2019-11-27'
+output: pdf_document
+---
+
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE,message=FALSE}
+RNGversion('3.5.1')
+library(mboost)
+library(randomForest)
+sp<-read.csv2("spambase.csv")
+sp$Spam<-as.factor(sp$Spam)
+```
+
+## Assignment 1: Ensemble Methods
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+n<-nrow(sp)
+set.seed(12345)
+id<-sample(n,(n*2)%/%3)
+train<-sp[id,]
+test<-sp[-id,]   ## devide training and test group
+
+numtree<-10*c(1,2,3,4,5,6,7,8,9,10)
+mis<-list(ada=NULL,ran<-NULL)
+for(i in 1:10)
+  {
+   ## train and test AdaBoost model
+   adafit<-blackboost(Spam~.,data=train,family=AdaExp(),control=boost_control(mstop=numtree[i]))
+   adapre<-ifelse(predict(adafit,newdata=test)>0.5,1,0)
+   mista<-as.matrix(table(adapre,test$Spam))
+   adamis<-(mista[1,2]+mista[2,1])/nrow(test)
+   mis[["ada"]]<-c(mis[["ada"]],adamis)
+   
+   ## train and test RandomForest model
+   ranfit<-randomForest(Spam~.,data=train,ntree=numtree[i]) 
+   ranpre<-predict(ranfit,newdata=test)
+   mista<-as.matrix(table(ranpre,test$Spam))
+   ranmis<-(mista[1,2]+mista[2,1])/nrow(test)
+   mis[["ran"]]<-c(mis[["ran"]],ranmis)
+   }
+
+## plot
+plot(numtree,mis$ada,type="b",col="black",ylim=range(0.05,0.45),main="MIsclassification rate/number of trees",xlab="Number of Trees",ylab="Misclassification rate") 
+lines(numtree,mis$ran,type="b",col="red")
+legend('topright',legend=c("AdaBoost","RandomForest"),fill=c("black","red"))
+
+```
+
+
+
+
+
+
+
+
+## Assignment 2: Mixture Models
+The plots below show different components to the variable distributions and also present the reached maximized likelihood. Usually too few components lead to bias and too many components bring overfitting. However, comparing to the true mean of trainning data, the model with 2 components actually gives a higher likelihood even than with 3.
+
+```{r,eval=TRUE,echo=FALSE,warning=FALSE}
+## example from instructions
+
+set.seed(1234567890)
+max_it <- 100 # max number of EM iterations
+min_change <- 0.1 # min change in log likelihood between two consecutive EM iterations
+N=1000 # number of training points
+D=10 # number of dimensions
+x <- matrix(nrow=N, ncol=D) # training data
+true_pi <- vector(length = 3) # true mixing coefficients
+true_mu <- matrix(nrow=3, ncol=D) # true conditional distributions
+true_pi=c(1/3, 1/3, 1/3)
+true_mu[1,]=c(0.5,0.6,0.4,0.7,0.3,0.8,0.2,0.9,0.1,1)
+true_mu[2,]=c(0.5,0.4,0.6,0.3,0.7,0.2,0.8,0.1,0.9,0)
+true_mu[3,]=c(0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5)
+#plot(true_mu[1,], type="o", col="blue", ylim=c(0,1))
+#points(true_mu[2,], type="o", col="red")
+#points(true_mu[3,], type="o", col="green")
+
+# Producing the training data
+for(n in 1:N) {
+k <- sample(1:3,1,prob=true_pi)
+for(d in 1:D) {
+x[n,d] <- rbinom(1,1,true_mu[k,d])
+}
+}
+
+
+########################  MY EM FUNCTION ########################
+myEM<-function(K=3){ # number of guessed components
+
+  z <- matrix(nrow=N, ncol=K) # fractional component assignments
+  pi <- vector(length = K) # mixing coefficients
+  mu <- matrix(nrow=K, ncol=D) # conditional distributions
+  llik <- vector(length = max_it) # log likelihood of the EM iterations
+  # Random initialization of the paramters
+  pi <- runif(K,0.49,0.51)
+  pi <- pi / sum(pi)
+  for(k in 1:K) {mu[k,] <- runif(D,0.49,0.51)}
+
+
+
+     ###################### EM Algorithm ##############################
+     ml<-NULL # Maximum likelihood reached after training
+   
+     for(it in 1:max_it) {
+    
+     ##Sys.sleep(0.5)
+
+      ############### E-step: Computation of the fractional component assignments
+       lh<-matrix(rep(1,N*K),nrow=N,ncol=K)
+       ##post<-matrix(nrow=N,ncol=K)## same to z
+       for(ex in 1:N){
+        for(bian in 1:D) {lh[ex,]<-lh[ex,]*t(mu[,bian])^x[ex,bian]*t(1-mu[,bian])^(1-x[ex,bian])}
+        z[ex,]<-lh[ex,]*pi/t(lh[ex,])%*%pi
+        
+                  
+      ############### Log likelihood computation.
+        tem<-1
+        for(comp in 1:K)  tem<-tem*((lh[ex,comp]*pi[comp])^z[ex,comp])
+        llik[it]<-llik[it]+log(tem)
+         
+                      }
+  
+      ##cat("iteration: ", it, "log likelihood: ", llik[it], "\n")
+      ##flush.console()
+
+
+      ############### Stop if the log likelihood has not changed significantly
+      if(it>1)  {if(abs(llik[it]-llik[it-1])<min_change) break} 
+      ############### M-step: ML parameter estimation from the data and fractional component assignments
+      for(bian in 1:D) for(comp in 1:K) mu[comp,bian]<-sum(z[,comp]*x[,bian])/sum(z[,comp])
+      pi<-colSums(z)/N  
+                           }
+     
+     ml<-max(llik[llik!=0])
+     #ml[bian]<-max(llik[llik!=0])
+                     
+
+plot(mu[1,], type="o", col="blue", ylim=c(0,1),xlab="Variables",ylab="MU")
+points(mu[2,], type="o", col="red")
+if(K>2) points(mu[3,], type="o", col="green")
+if(K>3) points(mu[4,], type="o", col="yellow")
+print(paste("The maximized likelihood is ",ml,sep=""))
+
+#return (list(pi=pi,mu=mu,ml=ml))
+}
+
+myEM(2)
+myEM(3)
+myEM(4)
+```
+
+
+
+
+
+# Code Appendix
+
+```{r code = readLines(knitr::purl("C:/Users/A550240/Desktop/LIU/1.2_MachineLearning/Lab1_block2_2/Lab1_Block2_JunLi_1.Rmd", documentation = 1)), echo = T, eval = F}
+```
